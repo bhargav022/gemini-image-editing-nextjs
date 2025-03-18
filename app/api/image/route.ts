@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { HistoryItem, HistoryPart } from "@/lib/types";
+import { promises as fs } from "fs";
+import path from "path";
+
+// Paths for JSON "DB" and image storage folder
+const DB_FILE_PATH = path.join(process.cwd(), "data", "generatedImages.json");
+const IMAGE_DIR = path.join(process.cwd(), "public", "generated-images");
+
+// Helper: Append a record to the JSON file
+async function saveRecord(record) {
+  let data = [];
+  try {
+    const content = await fs.readFile(DB_FILE_PATH, "utf-8");
+    data = JSON.parse(content);
+  } catch (err) {
+    // If file doesn't exist, we'll create a new one
+    console.error("JSON file not found or unreadable, creating new one.");
+  }
+  data.push(record);
+  await fs.writeFile(DB_FILE_PATH, JSON.stringify(data, null, 2));
+}
 
 // Initialize the Google Gen AI client with your API key
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -9,7 +29,7 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 // Define the model ID for Gemini 2.0 Flash experimental
 const MODEL_ID = "gemini-2.0-flash-exp";
 
-// Define interface for the formatted history item
+// Define interface for the formatted history item (for TypeScript)
 interface FormattedHistoryItem {
   role: "user" | "model";
   parts: Array<{
@@ -20,7 +40,7 @@ interface FormattedHistoryItem {
 
 export async function POST(req: NextRequest) {
   try {
-    // Parse JSON request instead of FormData
+    // Parse JSON request
     const requestData = await req.json();
     const { prompt, image: inputImage, history } = requestData;
 
@@ -73,10 +93,10 @@ export async function POST(req: NextRequest) {
                       }
                       return { text: "" };
                     })
-                    .filter((part) => Object.keys(part).length > 0), // Remove empty parts
+                    .filter((part) => Object.keys(part).length > 0),
                 };
               })
-              .filter((item: FormattedHistoryItem) => item.parts.length > 0) // Remove items with no parts
+              .filter((item: FormattedHistoryItem) => item.parts.length > 0)
           : [];
 
       // Create a chat session with the formatted history
@@ -92,10 +112,9 @@ export async function POST(req: NextRequest) {
 
       // Add the image if provided
       if (inputImage) {
-        // For image editing
         console.log("Processing image edit request");
 
-        // Check if the image is a valid data URL
+        // Validate data URL format
         if (!inputImage.startsWith("data:")) {
           throw new Error("Invalid image data URL format");
         }
@@ -134,7 +153,6 @@ export async function POST(req: NextRequest) {
     }
 
     const response = result.response;
-
     let textResponse = null;
     let imageData = null;
     let mimeType = "image/png";
@@ -146,7 +164,6 @@ export async function POST(req: NextRequest) {
 
       for (const part of parts) {
         if ("inlineData" in part && part.inlineData) {
-          // Get the image data
           imageData = part.inlineData.data;
           mimeType = part.inlineData.mimeType || "image/png";
           console.log(
@@ -156,7 +173,6 @@ export async function POST(req: NextRequest) {
             mimeType
           );
         } else if ("text" in part && part.text) {
-          // Store the text
           textResponse = part.text;
           console.log(
             "Text response received:",
@@ -166,7 +182,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Return just the base64 image and description as JSON
+    // If image data is available, store the image locally
+    let storedImagePath = null;
+    if (imageData) {
+      // Determine file extension based on MIME type
+      const extension = mimeType === "image/png" ? "png" : "jpg";
+      // Generate a unique file name
+      const fileName = `generatedImage-${Date.now()}.${extension}`;
+      const filePath = path.join(IMAGE_DIR, fileName);
+
+      // Ensure the image directory exists
+      try {
+        await fs.mkdir(IMAGE_DIR, { recursive: true });
+      } catch (mkdirError) {
+        console.error("Error creating image directory:", mkdirError);
+      }
+
+      // Decode the base64 image data and write to file
+      const buffer = Buffer.from(imageData, "base64");
+      await fs.writeFile(filePath, buffer);
+      // Set the stored image path (accessible from the public folder)
+      storedImagePath = `/generated-images/${fileName}`;
+    }
+
+    // Save the record (prompt and stored image path) in the JSON file
+    const record = {
+      prompt,
+      imagePath: storedImagePath,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveRecord(record);
+      console.log("Record saved to JSON file");
+    } catch (jsonError) {
+      console.error("Error saving record to JSON file:", jsonError);
+    }
+
+    // Return the image URL (or null) and text description as JSON
     return NextResponse.json({
       image: imageData ? `data:${mimeType};base64,${imageData}` : null,
       description: textResponse,

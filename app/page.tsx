@@ -75,7 +75,7 @@ export default function Home() {
         // Update history with both messages
         setHistory((prevHistory) => [...prevHistory, userMessage, aiResponse]);
       } else {
-        setError("No image returned from API");
+        setError("I can't generate NSFW content");
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : "An error occurred");
