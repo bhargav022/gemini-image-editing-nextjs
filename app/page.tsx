@@ -110,6 +110,9 @@ export default function Home() {
             Image Creation & Editing
           </CardTitle>
           <span className="text-sm font-mono text-muted-foreground">
+            developed by StoryMirror
+          </span>
+          <span className="text-sm font-mono text-muted-foreground">
             powered by Google DeepMind Gemini 2.0 Flash
           </span>
         </CardHeader>
