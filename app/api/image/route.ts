@@ -15,7 +15,8 @@ async function saveRecord(record) {
     const content = await fs.readFile(DB_FILE_PATH, "utf-8");
     data = JSON.parse(content);
   } catch (err) {
-    // If file doesn't exist, we'll create a new one
+    // If file doesn't exist, we'll create a new one\
+    console.log(err)
     console.error("JSON file not found or unreadable, creating new one.");
   }
   data.push(record);
