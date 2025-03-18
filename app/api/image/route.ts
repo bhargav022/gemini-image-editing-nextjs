@@ -160,6 +160,25 @@ export async function POST(req: NextRequest) {
 
     // Process the response
     if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+
+      // Check if the candidate was flagged for safety reasons
+      if (candidate.finishReason === "IMAGE_SAFETY") {
+        console.error("Image generation blocked due to safety filters.");
+        return NextResponse.json(
+          { error: "Image generation blocked due to safety reasons. Please modify your prompt/image." },
+          { status: 400 }
+        );
+      }
+
+      // Ensure candidate content exists before accessing parts
+      if (!candidate.content || !candidate.content.parts) {
+        console.error("No valid content received from the API.");
+        return NextResponse.json(
+          { error: "Unexpected response from image generation API." },
+          { status: 500 }
+        );
+      }
       const parts = response.candidates[0].content.parts;
       console.log("Number of parts in response:", parts.length);
 
