@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { HistoryItem, HistoryPart } from "@/lib/types";
 import { promises as fs } from "fs";
 import path from "path";
@@ -25,10 +25,10 @@ async function saveRecord(record) {
 
 // Initialize the Google Gen AI client with your API key
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 // Define the model ID for Gemini 2.0 Flash experimental
-const MODEL_ID = "gemini-2.0-flash-exp";
+const MODEL_ID = "gemini-2.0-flash-exp-image-generation";
 
 // Define interface for the formatted history item (for TypeScript)
 interface FormattedHistoryItem {
@@ -52,19 +52,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get the model with the correct configuration
-    const model = genAI.getGenerativeModel({
-      model: MODEL_ID,
-      generationConfig: {
-        temperature: 1,
-        topP: 0.95,
-        topK: 40,
-        // @ts-expect-error - Gemini API JS is missing this type
-        responseModalities: ["Text", "Image"],
-      },
-    });
-
-    let result;
+    let response;
 
     try {
       // Convert history to the format expected by Gemini API
@@ -99,11 +87,6 @@ export async function POST(req: NextRequest) {
               })
               .filter((item: FormattedHistoryItem) => item.parts.length > 0)
           : [];
-
-      // Create a chat session with the formatted history
-      const chat = model.startChat({
-        history: formattedHistory,
-      });
 
       // Prepare the current message parts
       const messageParts = [];
@@ -144,16 +127,25 @@ export async function POST(req: NextRequest) {
           },
         });
       }
+      // Add the message parts to the history
+      formattedHistory.push(messageParts);
 
-      // Send the message to the chat
-      console.log("Sending message with", messageParts.length, "parts");
-      result = await chat.sendMessage(messageParts);
+      // Generate the content
+      response = await ai.models.generateContent({
+        model: MODEL_ID,
+        contents: formattedHistory,
+        config: {
+          temperature: 1,
+          topP: 0.95,
+          topK: 40,
+          responseModalities: ["Text", "Image"],
+        },
+      });
     } catch (error) {
       console.error("Error in chat.sendMessage:", error);
       throw error;
     }
 
-    const response = result.response;
     let textResponse = null;
     let imageData = null;
     let mimeType = "image/png";
